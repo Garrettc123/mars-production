@@ -1,0 +1,9 @@
+[project]
+name = "mars-research"
+version = "0.1.0"
+description = "Reproducible benchmark tooling for MARS uncertainty-aware routing"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["research/src"]
+testpaths = ["research/tests"]

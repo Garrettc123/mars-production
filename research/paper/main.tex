@@ -1,0 +1,53 @@
+\\documentclass[11pt]{article}
+\\usepackage[margin=1in]{geometry}
+\\usepackage{booktabs}
+\\usepackage{amsmath}
+\\usepackage{hyperref}
+\\title{MARS: Uncertainty-Aware Adaptive Reasoning for Selective LLM Routing}
+\\author{Garrett Carroll \\ Independent Researcher}
+\\date{\\today}
+
+\\begin{document}
+\\maketitle
+
+\\begin{abstract}
+This manuscript presents the evaluation protocol for MARS, an uncertainty-aware routing framework for language-model workflows. MARS records an uncertainty estimate and may allocate additional inference-time reasoning to cases above a pre-registered threshold. The paper makes no empirical performance claim until the corresponding reproducible evaluation artifacts are available. We evaluate accuracy, calibration, error detection, selective risk, latency, and cost against fixed-budget baselines.
+\\end{abstract}
+
+\\section{Introduction}
+Language-model systems can be accurate on average while providing unreliable confidence on individual outputs. MARS investigates whether a calibrated uncertainty signal can support selective escalation to a deeper reasoning path. The contribution is an explicitly auditable experimental design, not a claim that uncertainty-aware routing is categorically novel.
+
+\\section{Method}
+For each input $x$, the system emits confidence $c(x)\\in[0,1]$ and uncertainty $u(x)=1-c(x)$. Under the adaptive condition, a deep route is selected when $u(x)\\geq\\tau$, where $\\tau$ is fixed before held-out testing. All conditions share the same task items, verifier, model version, and prompt version except for the routing intervention.
+
+\\section{Experimental Design}
+We compare: (1) a one-pass baseline, (2) self-reported confidence, (3) MARS score-only, (4) MARS adaptive routing, and (5) an always-deep condition. Primary metrics are accuracy, Expected Calibration Error, Brier score, error-detection AUROC, risk-coverage, cost, latency, and escalation rate.
+
+\\section{Results}
+\\textbf{Pending reproducible experiment execution.} No numerical result should appear in this section until linked to versioned prediction records, an evaluation manifest, and the scoring code revision.
+
+\\begin{table}[h]
+\\centering
+\\caption{Results template. Values are intentionally omitted pending execution.}
+\\begin{tabular}{lrrrrrr}
+\\toprule
+Condition & Accuracy & ECE & Brier & AUROC & Cost/Correct & Latency \\\\
+\\midrule
+Baseline & TBD & TBD & TBD & TBD & TBD & TBD \\\\
+Self-reported confidence & TBD & TBD & TBD & TBD & TBD & TBD \\\\
+MARS score-only & TBD & TBD & TBD & TBD & TBD & TBD \\\\
+MARS adaptive & TBD & TBD & TBD & TBD & TBD & TBD \\\\
+Always-deep & TBD & TBD & TBD & TBD & TBD & TBD \\\\
+\\bottomrule
+\\end{tabular}
+\\end{table}
+
+\\section{Limitations}
+The system may depend on the reliability of the underlying model, the task verifier, and the calibration dataset. Routing can increase cost or latency, and a confidence signal can fail under distribution shift. Results must be reported by task category rather than only as a pooled average.
+
+\\section{Reproducibility and Ethics}
+Every run records model identifiers, prompts, seeds, routing threshold, timestamps, software environment, token use, latency, and costs. Customer or proprietary data must not be included without a documented legal basis and de-identification review.
+
+\\bibliographystyle{plain}
+\\bibliography{references}
+\\end{document}

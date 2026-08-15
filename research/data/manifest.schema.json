@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MARS Evaluation Item",
+  "type": "object",
+  "required": ["id", "split", "task_type", "input", "ground_truth", "source"],
+  "properties": {
+    "id": {"type": "string"},
+    "split": {"enum": ["train", "dev", "test"]},
+    "task_type": {"type": "string"},
+    "input": {"type": "string"},
+    "ground_truth": {},
+    "source": {"type": "string"},
+    "license": {"type": "string"}
+  },
+  "additionalProperties": true
+}

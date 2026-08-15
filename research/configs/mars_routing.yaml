@@ -1,0 +1,17 @@
+experiment_name: mars_adaptive_routing
+condition: mars_adaptive
+model_id: REPLACE_WITH_MODEL_ID
+prompt_version: v1
+seed: 20260815
+routing:
+  enabled: true
+  uncertainty_threshold: 0.50
+  low_path: standard
+  high_path: deep
+budget:
+  standard_max_tokens: 1200
+  deep_max_tokens: 4000
+verifier:
+  type: exact_match_or_test_suite
+notes: |
+  Pre-register the threshold before final held-out evaluation. Do not tune it using the final test split.
