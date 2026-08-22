@@ -1,0 +1,13 @@
+experiment_name: baseline_one_pass
+condition: baseline
+model_id: REPLACE_WITH_MODEL_ID
+prompt_version: v1
+seed: 20260815
+routing:
+  enabled: false
+  threshold: null
+budget:
+  mode: standard
+  max_tokens: 1200
+verifier:
+  type: exact_match_or_test_suite
