@@ -1,27 +1,39 @@
-# 🚀 MARS Production
+# MARS — Metacognitive AI Reasoning System
 
-<div align="left">
-  <a href="https://github.com/sponsors/Garrettc123"><img src="https://img.shields.io/badge/Sponsor-Garrett%20Carroll-red?style=for-the-badge&logo=github"></a>
-</div>
+Production FastAPI service for self-reflective reasoning + NWU Protocol ingress.
 
-**Status:** 🚀 PRODUCTION READY
+## Endpoints
 
-**Multi-Agent Revenue System (MARS)** deployed to production — autonomous deal sourcing and closure. 
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| GET | `/health` | none | Liveness |
+| GET | `/api/status` | none | Uptime + model |
+| POST | `/api/reason` | `X-Api-Key` | Primary reasoning |
+| POST | `/api/metacognize` | `X-Api-Key` | Self-reflection |
+| POST | `/api/optimize` | `X-Api-Key` | Iterative improve (1–5) |
+| POST | `/nwu-listener` | `auth_token` in body | NWU opportunity handshake |
 
----
+## Quickstart
 
-## 💼 Commercial Licensing & Customization
+```bash
+cp .env.example .env
+# set ANTHROPIC_API_KEY, MARS_API_KEY, INTERNAL_AGENT_TOKEN
+pip install -r requirements.txt
+uvicorn mars_api:app --reload
+```
 
-This is a proprietary enterprise application.
+## Docker / Railway
 
-- **Enterprise License:** Commercial licensing available for enterprise deployment.
-- **Custom Agent Workflows:** Need this platform integrated with your specific lead generation workflows? Contact Garrett Carroll.
-- **Back the Vision:** [Sponsor the project on GitHub](https://github.com/sponsors/Garrettc123).
+```bash
+docker compose up --build
+```
 
----
+`railway.toml` points healthcheck at `/health`.
 
-## 🛠️ Built By
+## Tests
 
-**Garrett Carroll**  
-Founder, Zero-Human Enterprise  
-[GitHub](https://github.com/Garrettc123)
+```bash
+pytest tests/ --cov=mars_api --cov-fail-under=80 -v
+```
+
+All Anthropic calls are mocked. No live credits required.
