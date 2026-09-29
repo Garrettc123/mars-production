@@ -1,20 +1,27 @@
 import os
 import time
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Literal, Optional
 
-from fastapi import FastAPI, HTTPException, Header
-from pydantic import BaseModel
 import anthropic
+from fastapi import FastAPI, Header, HTTPException
+from pydantic import BaseModel
+
+import mars_router
 
 # ---------------------------------------------------------------------------
 # App initialization
 # ---------------------------------------------------------------------------
 
+VERSION = "1.1.0"
+
 app = FastAPI(
     title="MARS API",
-    description="Metacognitive AI Reasoning System — self-reflective reasoning engine",
-    version="1.0.0",
+    description=(
+        "Metacognitive AI Reasoning System — self-reflective reasoning engine "
+        "with uncertainty-aware routing"
+    ),
+    version=VERSION,
 )
 
 _start_time: float = time.time()
@@ -32,16 +39,25 @@ def _require_api_key(x_api_key: Optional[str]) -> None:
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
+def _upstream_error(exc: Exception) -> HTTPException:
+    """Map an Anthropic API failure to a 502 without leaking request details."""
+    return HTTPException(
+        status_code=502, detail=f"Upstream model error: {exc.__class__.__name__}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Request / Response schemas
 # ---------------------------------------------------------------------------
 
-MODEL = "claude-3-5-sonnet-20241022"
-
 
 class ReasonRequest(BaseModel):
     query: str
-    max_tokens: int = 4096
+    # Caps the deep path only; the standard path uses MARS_STANDARD_MAX_TOKENS.
+    max_tokens: Optional[int] = None
+    # auto: cheap pass first, escalate to deep only when uncertain (default).
+    # standard: cheap pass + score, never escalate. deep: always deep.
+    route: Optional[Literal["auto", "standard", "deep"]] = None
 
 
 class MetacognizeRequest(BaseModel):
@@ -66,9 +82,24 @@ class NWUPayload(BaseModel):
     timestamp: str
 
 
+def _utility_call(client: Any, *, system: str, prompt: str, max_tokens: int):
+    """Single call on the deep model for the metacognize / optimize endpoints."""
+    cfg = mars_router.load_config()
+    result = mars_router.call(
+        client,
+        model=cfg.deep_model,
+        effort=cfg.utility_effort,
+        max_tokens=max_tokens,
+        system=system,
+        query=prompt,
+    )
+    return result.text, cfg.deep_model
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
 
 @app.get("/health", tags=["system"])
 async def health():
@@ -78,40 +109,57 @@ async def health():
 
 @app.get("/api/status", tags=["system"])
 async def status():
-    """Return runtime status and uptime information."""
+    """Return runtime status, uptime, and routing configuration."""
+    cfg = mars_router.load_config()
     uptime_seconds = round(time.time() - _start_time, 2)
     return {
         "service": "MARS",
-        "version": "1.0.0",
+        "version": VERSION,
         "uptime_seconds": uptime_seconds,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "model": MODEL,
+        "model": cfg.standard_model,
+        "models": {"standard": cfg.standard_model, "deep": cfg.deep_model},
+        "routing": {
+            "default_route": cfg.default_route,
+            "threshold": cfg.threshold,
+            "score_version": mars_router.SCORE_VERSION,
+        },
     }
 
 
 @app.post("/api/reason", tags=["reasoning"])
-async def reason(request: ReasonRequest, x_api_key: Optional[str] = Header(None)):
-    """Primary reasoning endpoint."""
+def reason(request: ReasonRequest, x_api_key: Optional[str] = Header(None)):
+    """Primary reasoning endpoint with uncertainty-aware routing.
+
+    Runs a cheap standard pass that reports its own confidence and escalates to the
+    deep path only when uncertainty >= the threshold (or the pass is truncated or
+    unscored). The `route` object in the response says which path answered and why.
+    """
     _require_api_key(x_api_key)
     client = _get_client()
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=request.max_tokens,
-        system=(
-            "You are MARS (Metacognitive AI Reasoning System). "
-            "Reason carefully and thoroughly about the user's query."
-        ),
-        messages=[{"role": "user", "content": request.query}],
-    )
+    try:
+        result = mars_router.run(
+            client, request.query, route=request.route, max_tokens=request.max_tokens
+        )
+    except anthropic.APIError as exc:
+        raise _upstream_error(exc) from exc
     return {
-        "reasoning": response.content[0].text,
-        "model": MODEL,
+        "reasoning": result.answer,
+        "model": result.model,
         "success": True,
+        "route": result.public(),
     }
 
 
+@app.get("/api/routing/stats", tags=["reasoning"])
+def routing_stats(x_api_key: Optional[str] = Header(None)):
+    """In-memory routing counters since process start: how often the deep path runs."""
+    _require_api_key(x_api_key)
+    return mars_router.STATS.snapshot()
+
+
 @app.post("/api/metacognize", tags=["reasoning"])
-async def metacognize(
+def metacognize(
     request: MetacognizeRequest,
     x_api_key: Optional[str] = Header(None),
 ):
@@ -123,25 +171,24 @@ async def metacognize(
         f"Reflect on the following reasoning and identify any flaws, "
         f"blind spots, or improvements:{context_block}\n\n{request.reasoning}"
     )
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=request.max_tokens,
-        system=(
-            "You are MARS (Metacognitive AI Reasoning System). "
-            "Your role is to critically examine reasoning, identify weaknesses, "
-            "and produce an improved, self-corrected analysis."
-        ),
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return {
-        "reflection": response.content[0].text,
-        "model": MODEL,
-        "success": True,
-    }
+    try:
+        text, model = _utility_call(
+            client,
+            system=(
+                "You are MARS (Metacognitive AI Reasoning System). "
+                "Your role is to critically examine reasoning, identify weaknesses, "
+                "and produce an improved, self-corrected analysis."
+            ),
+            prompt=prompt,
+            max_tokens=request.max_tokens,
+        )
+    except anthropic.APIError as exc:
+        raise _upstream_error(exc) from exc
+    return {"reflection": text, "model": model, "success": True}
 
 
 @app.post("/api/optimize", tags=["reasoning"])
-async def optimize(
+def optimize(
     request: OptimizeRequest,
     x_api_key: Optional[str] = Header(None),
 ):
@@ -152,6 +199,7 @@ async def optimize(
 
     current_output: str = ""
     history: list[dict] = []
+    model = mars_router.load_config().deep_model
 
     for i in range(iterations):
         if i == 0:
@@ -162,24 +210,25 @@ async def optimize(
                 f"Reflect on the above and produce a significantly improved version "
                 f"for the original task: {request.task}"
             )
-
-        response = client.messages.create(
-            model=MODEL,
-            max_tokens=request.max_tokens,
-            system=(
-                "You are MARS (Metacognitive AI Reasoning System). "
-                "Each iteration you must improve upon the previous attempt."
-            ),
-            messages=[{"role": "user", "content": prompt}],
-        )
-        current_output = response.content[0].text
+        try:
+            current_output, model = _utility_call(
+                client,
+                system=(
+                    "You are MARS (Metacognitive AI Reasoning System). "
+                    "Each iteration you must improve upon the previous attempt."
+                ),
+                prompt=prompt,
+                max_tokens=request.max_tokens,
+            )
+        except anthropic.APIError as exc:
+            raise _upstream_error(exc) from exc
         history.append({"iteration": i + 1, "output": current_output})
 
     return {
         "final_output": current_output,
         "iterations_completed": iterations,
         "history": history,
-        "model": MODEL,
+        "model": model,
         "success": True,
     }
 
