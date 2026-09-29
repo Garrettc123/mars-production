@@ -5,7 +5,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY mars_api.py .
+COPY mars_api.py mars_router.py ./
 
 EXPOSE 8000
 

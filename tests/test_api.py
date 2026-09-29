@@ -14,11 +14,12 @@ VALID_KEY = "test-mars-key"
 NWU_TOKEN = "test-nwu-token"
 
 
-def _make_mock_response(text: str = "mock reasoning output") -> MagicMock:
+def _make_mock_response(text: str = "mock reasoning output", stop_reason: str = "end_turn") -> MagicMock:
     content_block = MagicMock()
     content_block.text = text
     mock_response = MagicMock()
     mock_response.content = [content_block]
+    mock_response.stop_reason = stop_reason
     return mock_response
 
 
@@ -27,6 +28,8 @@ def set_env_vars(monkeypatch):
     monkeypatch.setenv("MARS_API_KEY", VALID_KEY)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic-key")
     monkeypatch.setenv("INTERNAL_AGENT_TOKEN", NWU_TOKEN)
+    monkeypatch.setenv("MARS_THRESHOLD", "0.50")
+    monkeypatch.setenv("MARS_DEFAULT_ROUTE", "auto")
 
 
 @pytest.fixture
@@ -61,15 +64,19 @@ class TestStatus:
     def test_status_fields(self, client):
         data = client.get("/api/status").json()
         assert data["service"] == "MARS"
-        assert data["version"] == "1.0.0"
+        assert data["version"] == "1.1.0"
         assert "uptime_seconds" in data
         assert "timestamp" in data
         assert "model" in data
+        assert "routing" in data
+        assert data["routing"]["score_version"]
 
 
 class TestReason:
     def test_reason_success(self, client, mock_anthropic):
-        mock_anthropic.messages.create.return_value = _make_mock_response("Deep thought.")
+        mock_anthropic.messages.create.return_value = _make_mock_response(
+            "Deep thought.\nconfidence: 0.92"
+        )
         resp = client.post(
             "/api/reason",
             json={"query": "What is consciousness?"},
@@ -79,6 +86,23 @@ class TestReason:
         data = resp.json()
         assert data["success"] is True
         assert data["reasoning"] == "Deep thought."
+        assert data["route"]["path"] == "standard"
+
+    def test_reason_escalates_when_unscored(self, client, mock_anthropic):
+        mock_anthropic.messages.create.side_effect = [
+            _make_mock_response("cheap pass with no score"),
+            _make_mock_response("deep answer\nconfidence: 0.88"),
+        ]
+        resp = client.post(
+            "/api/reason",
+            json={"query": "hard question", "route": "auto"},
+            headers={"x-api-key": VALID_KEY},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["route"]["path"] == "deep"
+        assert data["route"]["escalated"] is True
+        assert data["reasoning"] == "deep answer"
 
     def test_reason_missing_key_returns_401(self, client):
         resp = client.post("/api/reason", json={"query": "test"})
@@ -91,6 +115,16 @@ class TestReason:
             headers={"x-api-key": "wrong-key"},
         )
         assert resp.status_code == 401
+
+
+class TestRoutingStats:
+    def test_stats_requires_key(self, client):
+        assert client.get("/api/routing/stats").status_code == 401
+
+    def test_stats_ok(self, client):
+        resp = client.get("/api/routing/stats", headers={"x-api-key": VALID_KEY})
+        assert resp.status_code == 200
+        assert "requests" in resp.json()
 
 
 class TestMetacognize:
